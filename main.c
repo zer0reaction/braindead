@@ -254,6 +254,24 @@ bool compile(tokens_t *tokens, char *path) {
     fprintf(fp, ".globl _start\n");
     fprintf(fp, "\n");
 
+    fprintf(fp, "getchar:\n");
+    fprintf(fp, "    movq $0, %%rax\n");
+    fprintf(fp, "    movq $0, %%rdi\n");
+    fprintf(fp, "    movq %%r8, %%rsi\n");
+    fprintf(fp, "    movq $1, %%rdx\n");
+    fprintf(fp, "    syscall\n");
+    fprintf(fp, "    ret\n");
+    fprintf(fp, "\n");
+
+    fprintf(fp, "putchar:\n");
+    fprintf(fp, "    movq $1, %%rax\n");
+    fprintf(fp, "    movq $1, %%rdi\n");
+    fprintf(fp, "    movq %%r8, %%rsi\n");
+    fprintf(fp, "    movq $1, %%rdx\n");
+    fprintf(fp, "    syscall\n");
+    fprintf(fp, "    ret\n");
+    fprintf(fp, "\n");
+
     fprintf(fp, "_start:\n");
     fprintf(fp, "    leaq data(%%rip), %%r8\n");
 
@@ -270,42 +288,38 @@ bool compile(tokens_t *tokens, char *path) {
             break;
 
         case TT_INST_INC:
+            fprintf(fp, "    /* > */\n");
             fprintf(fp, "    incq %%r8\n");
             i++;
             break;
 
         case TT_INST_DEC:
+            fprintf(fp, "    /* < */\n");
             fprintf(fp, "    decq %%r8\n");
             i++;
             break;
 
         case TT_DATA_INC:
+            fprintf(fp, "    /* + */\n");
             fprintf(fp, "    incb (%%r8)\n");
             i++;
             break;
 
         case TT_DATA_DEC:
+            fprintf(fp, "    /* - */\n");
             fprintf(fp, "    decb (%%r8)\n");
             i++;
             break;
 
         case TT_READ_BYTE:
-            fprintf(fp, "    movq $0, %%rax\n");
-            fprintf(fp, "    movq $0, %%rdi\n");
-            fprintf(fp, "    movq %%r8, %%rsi\n");
-            fprintf(fp, "    movq $1, %%rdx\n");
-            fprintf(fp, "    syscall\n");
-
+            fprintf(fp, "    /* , */\n");
+            fprintf(fp, "    call getchar\n");
             i++;
             break;
 
         case TT_WRITE_BYTE:
-            fprintf(fp, "    movq $1, %%rax\n");
-            fprintf(fp, "    movq $1, %%rdi\n");
-            fprintf(fp, "    movq %%r8, %%rsi\n");
-            fprintf(fp, "    movq $1, %%rdx\n");
-            fprintf(fp, "    syscall\n");
-
+            fprintf(fp, "    /* . */\n");
+            fprintf(fp, "    call putchar\n");
             i++;
             break;
 
@@ -314,6 +328,7 @@ bool compile(tokens_t *tokens, char *path) {
             stack[si] = loopn;
             loopn++;
 
+            fprintf(fp, "    /* [ */\n");
             fprintf(fp, "    cmpb $0, (%%r8)\n");
             fprintf(fp, "    jz .end%lu\n", stack[si]);
             fprintf(fp, ".start%lu:\n", stack[si]);
@@ -322,6 +337,7 @@ bool compile(tokens_t *tokens, char *path) {
             break;
 
         case TT_LOOP_END:
+            fprintf(fp, "    /* ] */\n");
             fprintf(fp, "    cmpb $0, (%%r8)\n");
             fprintf(fp, "    jnz .start%lu\n", stack[si]);
             fprintf(fp, ".end%lu:\n", stack[si]);
@@ -338,6 +354,7 @@ bool compile(tokens_t *tokens, char *path) {
                 return false;
             }
 
+            fprintf(fp, "    /* $ */\n");
             fprintf(fp, "    movb $%d, (%%r8)\n", tokens->el[i + 1].value);
 
             i += 2;
@@ -346,18 +363,22 @@ bool compile(tokens_t *tokens, char *path) {
         case TT_INT_VAL:
             switch (tokens->el[i + 1].type) {
             case TT_INST_INC:
+                fprintf(fp, "    /* n> */\n");
                 fprintf(fp, "    addq $%d, %%r8\n", tokens->el[i].value);
                 i += 2;
                 break;
             case TT_INST_DEC:
+                fprintf(fp, "    /* n< */\n");
                 fprintf(fp, "    subq $%d, %%r8\n", tokens->el[i].value);
                 i += 2;
                 break;
             case TT_DATA_INC:
+                fprintf(fp, "    /* n+ */\n");
                 fprintf(fp, "    addb $%d, (%%r8)\n", tokens->el[i].value);
                 i += 2;
                 break;
             case TT_DATA_DEC:
+                fprintf(fp, "    /* n- */\n");
                 fprintf(fp, "    subb $%d, (%%r8)\n", tokens->el[i].value);
                 i += 2;
                 break;
@@ -369,6 +390,7 @@ bool compile(tokens_t *tokens, char *path) {
             break;
 
         case TT_CHAR:
+            fprintf(fp, "    /* char */\n");
             fprintf(fp, "    movb $%d, (%%r8)\n", tokens->el[i].value);
             i++;
             break;
@@ -378,6 +400,7 @@ bool compile(tokens_t *tokens, char *path) {
         }
     }
 
+    fprintf(fp, "    /* exit(0) */\n");
     fprintf(fp, "    mov $60, %%rax\n");
     fprintf(fp, "    xor %%rdi, %%rdi\n");
     fprintf(fp, "    syscall\n");
