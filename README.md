@@ -12,6 +12,7 @@ Original brainfuck syntax still works.
 * The '$' operator followed by an unsigned integer results in setting the current cell to it
 * An unsigned integer followed by '<', '>', '+', '-' results in repeating the operator action
 * Any other character except space, tab and newline result in setting the current cell to the ASCII code of that character
+* C89-style comments `/* ... */`
 
 ## Usage
 
