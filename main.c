@@ -14,6 +14,7 @@ typedef enum tt_t {
     TT_EMPTY = 0,
     TT_EOF = 1,
     TT_INT_VAL = 2,
+    TT_CHAR = 3,
 
     TT_INST_INC = '>',
     TT_INST_DEC = '<',
@@ -28,7 +29,7 @@ typedef enum tt_t {
 
 typedef struct token_t {
     tt_t type;
-    int value;
+    char value;
 } token_t;
 
 typedef struct tokens_t {
@@ -88,16 +89,22 @@ bool tokenize(tokens_t *tokens, file_t *file) {
     size_t i = 0;
     token_t t = {0};
     token_t clear = {0};
+    bool comment = false;
 
     da_clear(tokens);
 
+    comment = false;
+
     for (i = 0; i < file->size; i++) {
+        if (comment && file->el[i] != '*') continue;
+
         switch (file->el[i]) {
         case '<':
             t.type = TT_INST_DEC;
             da_push_back(tokens, t);
             t = clear;
             break;
+
         case '>':
             t.type = TT_INST_INC;
             da_push_back(tokens, t);
@@ -109,6 +116,7 @@ bool tokenize(tokens_t *tokens, file_t *file) {
             da_push_back(tokens, t);
             t = clear;
             break;
+
         case '-':
             t.type = TT_DATA_DEC;
             da_push_back(tokens, t);
@@ -120,6 +128,7 @@ bool tokenize(tokens_t *tokens, file_t *file) {
             da_push_back(tokens, t);
             t = clear;
             break;
+
         case '.':
             t.type = TT_WRITE_BYTE;
             da_push_back(tokens, t);
@@ -131,6 +140,7 @@ bool tokenize(tokens_t *tokens, file_t *file) {
             da_push_back(tokens, t);
             t = clear;
             break;
+
         case ']':
             t.type = TT_LOOP_END;
             da_push_back(tokens, t);
@@ -138,15 +148,11 @@ bool tokenize(tokens_t *tokens, file_t *file) {
             break;
 
         case '$':
-            if (file->el[i + 1] < '0' || file->el[i + 1] > '9') {
-                printf("[%lu]: expected digit, found '%c'\n", i + 1, file->el[i + 1]);
-                return false;
-            }
-
             t.type = TT_INT_START;
             da_push_back(tokens, t);
             t = clear;
             break;
+
         case '0':
         case '1':
         case '2':
@@ -157,12 +163,6 @@ bool tokenize(tokens_t *tokens, file_t *file) {
         case '7':
         case '8':
         case '9':
-            if (tokens->size == 0 ||
-                tokens->el[tokens->size - 1].type != TT_INT_START)
-            {
-                break;
-            }
-
             t.type = TT_INT_VAL;
             t.value *= 10;
             t.value += file->el[i] - '0';
@@ -173,6 +173,36 @@ bool tokenize(tokens_t *tokens, file_t *file) {
             }
 
             break;
+
+        case '/':
+            if (file->el[i + 1] == '*') comment = true;
+            break;
+
+        case '*':
+            if (file->el[i + 1] == '/' && !comment) {
+                printf("comment termination without comment\n");
+                return false;
+            } else if (file->el[i + 1] == '/') {
+                comment = false;
+            }
+            break;
+
+        case '\0':
+            t.type = TT_EOF;
+            da_push_back(tokens, t);
+            t = clear;
+            break;
+
+        case ' ':
+        case '\t':
+        case '\n':
+            break;
+
+        default:
+            t.type = TT_CHAR;
+            t.value = file->el[i];
+            da_push_back(tokens, t);
+            t = clear;
         }
     }
 
@@ -180,8 +210,10 @@ bool tokenize(tokens_t *tokens, file_t *file) {
         assert(0 && "unreachable");
     }
 
-    t.type = TT_EOF;
-    da_push_back(tokens, t);
+    if (comment) {
+        printf("unterminated comment\n");
+        return false;
+    }
 
     return true;
 }
@@ -192,6 +224,8 @@ void print_tokens(tokens_t *tokens) {
             printf("%d", tokens->el[i].value);
         } else if (tokens->el[i].type == TT_EOF) {
             printf("EOF ");
+        } else if (tokens->el[i].type == TT_CHAR) {
+            printf("%c", tokens->el[i].value);
         } else {
             printf("%c", tokens->el[i].type);
         }
@@ -230,6 +264,7 @@ bool compile(tokens_t *tokens, char *path) {
         switch (tokens->el[i].type) {
         case TT_EMPTY:
             assert(0 && "empty token");
+
         case TT_EOF:
             i++;
             break;
@@ -238,6 +273,7 @@ bool compile(tokens_t *tokens, char *path) {
             fprintf(fp, "    incq %%r8\n");
             i++;
             break;
+
         case TT_INST_DEC:
             fprintf(fp, "    decq %%r8\n");
             i++;
@@ -247,6 +283,7 @@ bool compile(tokens_t *tokens, char *path) {
             fprintf(fp, "    incb (%%r8)\n");
             i++;
             break;
+
         case TT_DATA_DEC:
             fprintf(fp, "    decb (%%r8)\n");
             i++;
@@ -258,14 +295,17 @@ bool compile(tokens_t *tokens, char *path) {
             fprintf(fp, "    movq %%r8, %%rsi\n");
             fprintf(fp, "    movq $1, %%rdx\n");
             fprintf(fp, "    syscall\n");
+
             i++;
             break;
+
         case TT_WRITE_BYTE:
             fprintf(fp, "    movq $1, %%rax\n");
             fprintf(fp, "    movq $1, %%rdi\n");
             fprintf(fp, "    movq %%r8, %%rsi\n");
             fprintf(fp, "    movq $1, %%rdx\n");
             fprintf(fp, "    syscall\n");
+
             i++;
             break;
 
@@ -280,25 +320,58 @@ bool compile(tokens_t *tokens, char *path) {
 
             i++;
             break;
+
         case TT_LOOP_END:
             fprintf(fp, "    cmpb $0, (%%r8)\n");
             fprintf(fp, "    jnz .start%lu\n", stack[si]);
             fprintf(fp, ".end%lu:\n", stack[si]);
 
             si--;
+
             i++;
             break;
 
         case TT_INT_START:
             if (tokens->el[i + 1].type != TT_INT_VAL) {
-                assert(0 && "'$' is not followed by an integer");
+                printf("'$' is not followed by an integer\n");
+                fclose(fp);
+                return false;
             }
 
             fprintf(fp, "    movb $%d, (%%r8)\n", tokens->el[i + 1].value);
+
             i += 2;
             break;
+
         case TT_INT_VAL:
-            assert(0 && "stray int token");
+            switch (tokens->el[i + 1].type) {
+            case TT_INST_INC:
+                fprintf(fp, "    addq $%d, %%r8\n", tokens->el[i].value);
+                i += 2;
+                break;
+            case TT_INST_DEC:
+                fprintf(fp, "    subq $%d, %%r8\n", tokens->el[i].value);
+                i += 2;
+                break;
+            case TT_DATA_INC:
+                fprintf(fp, "    addb $%d, (%%r8)\n", tokens->el[i].value);
+                i += 2;
+                break;
+            case TT_DATA_DEC:
+                fprintf(fp, "    subb $%d, (%%r8)\n", tokens->el[i].value);
+                i += 2;
+                break;
+            default:
+                printf("invalid token after int\n");
+                fclose(fp);
+                return false;
+            }
+            break;
+
+        case TT_CHAR:
+            fprintf(fp, "    movb $%d, (%%r8)\n", tokens->el[i].value);
+            i++;
+            break;
 
         default:
             assert(0 && "unexpected token type");
@@ -319,27 +392,35 @@ int main(int argc, char **argv) {
 
     if (argc != 3) {
         printf("incorrect number of arguments: %d, expected: 3\n", argc);
-        return 1;
+        goto defer_err;
     }
 
     if (!read_file(&file, argv[1])) {
         printf("reading input file failed\n");
-        return 1;
+        goto defer_err;
     }
 
     if (!check_loops(&file)) {
         printf("incorrect loop usage\n");
-        return 1;
+        goto defer_err;
     }
 
     if (!tokenize(&tokens, &file)) {
         printf("tokenization failed\n");
-        return 1;
+        goto defer_err;
     }
 
-    compile(&tokens, argv[2]);
+    if (!compile(&tokens, argv[2])) {
+        printf("compilation failed\n");
+        goto defer_err;
+    }
 
-    da_destroy(&file);
-    da_destroy(&tokens);
+    if (file.el) da_destroy(&file);
+    if (tokens.el) da_destroy(&tokens);
     return 0;
+
+defer_err:
+    if (file.el) da_destroy(&file);
+    if (tokens.el) da_destroy(&tokens);
+    return 1;
 }
