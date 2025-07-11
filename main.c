@@ -29,7 +29,7 @@ typedef enum tt_t {
 
 typedef struct token_t {
     tt_t type;
-    char value;
+    unsigned char value;
 } token_t;
 
 typedef struct tokens_t {
