@@ -288,28 +288,46 @@ bool compile(tokens_t *tokens, char *path) {
             break;
 
         case TT_INST_INC:
-            fprintf(fp, "    /* > */\n");
-            fprintf(fp, "    incq %%r8\n");
-            i++;
-            break;
+        case TT_INST_DEC: {
+            size_t tcount = 0;
+            int res = 0;
 
-        case TT_INST_DEC:
-            fprintf(fp, "    /* < */\n");
-            fprintf(fp, "    decq %%r8\n");
-            i++;
-            break;
+            while (tokens->el[i + tcount].type == TT_INST_INC ||
+                   tokens->el[i + tcount].type == TT_INST_DEC)
+            {
+                if (tokens->el[i + tcount].type == TT_INST_INC) res++;
+                else                                            res--;
+                tcount++;
+            }
+
+            if (res != 0) {
+                fprintf(fp, "    /* instruction */\n");
+                fprintf(fp, "    addq $%d, %%r8\n", res);
+            }
+
+            i += tcount;
+        } break;
 
         case TT_DATA_INC:
-            fprintf(fp, "    /* + */\n");
-            fprintf(fp, "    incb (%%r8)\n");
-            i++;
-            break;
+        case TT_DATA_DEC: {
+            size_t tcount = 0;
+            int res = 0;
 
-        case TT_DATA_DEC:
-            fprintf(fp, "    /* - */\n");
-            fprintf(fp, "    decb (%%r8)\n");
-            i++;
-            break;
+            while (tokens->el[i + tcount].type == TT_DATA_INC ||
+                   tokens->el[i + tcount].type == TT_DATA_DEC)
+            {
+                if (tokens->el[i + tcount].type == TT_DATA_INC) res++;
+                else                                            res--;
+                tcount++;
+            }
+
+            if (res != 0) {
+                fprintf(fp, "    /* data */\n");
+                fprintf(fp, "    addb $%d, (%%r8)\n", res);
+            }
+
+            i += tcount;
+        } break;
 
         case TT_READ_BYTE:
             fprintf(fp, "    /* , */\n");
